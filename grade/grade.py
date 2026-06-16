@@ -36,7 +36,9 @@ READ_ONLY = {
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    # Normalize line endings so a CRLF checkout (Windows/Git autocrlf) hashes
+    # the same as the LF source the manifest was generated from.
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 # ---------------------------------------------------------------------------

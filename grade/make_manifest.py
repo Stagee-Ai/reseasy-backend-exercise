@@ -18,7 +18,8 @@ READ_ONLY = [
 
 def main() -> None:
     manifest = {
-        rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest() for rel in READ_ONLY
+        rel: hashlib.sha256((ROOT / rel).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+        for rel in READ_ONLY
     }
     out = Path(__file__).resolve().parent / "manifest.json"
     out.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
