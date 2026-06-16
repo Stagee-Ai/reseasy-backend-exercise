@@ -1,0 +1,6 @@
+{
+  "src/backends/base.py": "304df63be22c4ba297bb35b97e33d8d50b725553b2bfaedd06427db09670209d",
+  "src/backends/registry.py": "5c49dae18ddd6ccdc84cc5fc11892448a9de01d7f83220d609f9a029879638da",
+  "src/backends/reseasy_client.py": "98b345caa1ebb6278cc9520cd17a7178eb5d6f0b9b02b6756784e684e1eec79b",
+  "tests/test_contract.py": "97e0c9651c59df00e95e936b18a26898b95d9f3e13b44213ae2ecdbbd0f97b8f"
+}
