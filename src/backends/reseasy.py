@@ -47,7 +47,26 @@ class ReseasyBackend(BookingBackend):
         *,
         preference: str = "balanced",
     ) -> AvailabilityResult:
-        raise NotImplementedError("TODO: implement get_availability")
+        slots = await self._client.get_slots(date)
+        available_slots = [s for s in slots if s["available"]]
+
+        exact_match = next((s for s in available_slots if s["time"] == time_), None)
+        exact_match_datetime = exact_match["iso"] if exact_match else None
+
+        alternative_times = [
+            s["time"] for s in available_slots if s["time"] != time_
+        ] if not exact_match else []
+
+        return AvailabilityResult(
+            date=date,
+            requested_time=time_,
+            requested_hhmm=time_,
+            party_size=party_size,
+            exact_match_datetime=exact_match_datetime,
+            alternative_times=alternative_times,
+            fetched_at_monotonic=time.monotonic(),
+            preference=preference,
+        )
 
     async def create_reservation(
         self,
@@ -63,14 +82,38 @@ class ReseasyBackend(BookingBackend):
         restaurant_timezone: str = "UTC",
         prefetched_meal_date: str = "",
     ) -> tuple[str, str]:
-        raise NotImplementedError("TODO: implement create_reservation")
+        try:
+            result = await self._client.create_booking(
+                date=date,
+                time_=time_,
+                party_size=party_size,
+                name=guest_name,
+                phone=guest_phone,
+                email=guest_email,
+                notes=notes,
+            )
+            provider_id = result["id"]
+            msg = (
+                f"Your reservation is confirmed for {party_size} guests on {date} at {time_}. "
+                f"Booking reference: {provider_id}."
+            )
+            return msg, provider_id
+        except ReseasyConflict as exc:
+            return f"BOOKING_ERROR: slot {date} {time_} is no longer available.", ""
 
     async def find_reservation(
         self,
         guest_phone: str,
         restaurant_timezone: str = "UTC",
     ) -> str:
-        raise NotImplementedError("TODO: implement find_reservation")
+        bookings = await self._client.find_by_phone(guest_phone)
+        if not bookings:
+            return f"No reservations found for {guest_phone}."
+        lines = [
+            f"- {b['date']} at {b['time']} for {b['party_size']} guests (ref: {b['id']})"
+            for b in bookings
+        ]
+        return "Found reservations:\n" + "\n".join(lines)
 
     async def modify_reservation(
         self,
@@ -81,19 +124,53 @@ class ReseasyBackend(BookingBackend):
         new_notes: str = "",
         restaurant_timezone: str = "UTC",
     ) -> str:
-        raise NotImplementedError("TODO: implement modify_reservation")
+        # Nothing to change — skip API call
+        if not new_date and not new_time and not new_party_size and not new_notes:
+            return f"Reservation {reservation_id} is unchanged."
+
+        kwargs: dict = {}
+        if new_date:
+            kwargs["date"] = new_date
+        if new_time:
+            kwargs["time_"] = new_time
+        if new_party_size:
+            kwargs["party_size"] = new_party_size
+        if new_notes:
+            kwargs["notes"] = new_notes
+
+        try:
+            await self._client.update_booking(reservation_id, **kwargs)
+            return f"Reservation {reservation_id} has been updated successfully."
+        except ReseasyNotFound:
+            return f"BOOKING_ERROR: reservation {reservation_id} not found."
 
     async def cancel_reservation(
         self,
         reservation_id: str,
     ) -> str:
-        raise NotImplementedError("TODO: implement cancel_reservation")
+        try:
+            await self._client.cancel_booking(reservation_id)
+            return f"Reservation {reservation_id} has been cancelled."
+        except ReseasyNotFound:
+            return f"BOOKING_ERROR: reservation {reservation_id} not found."
 
 
 # ---------------------------------------------------------------------------
 # Factory + validator + registration
 # ---------------------------------------------------------------------------
-# TODO: write a factory that builds a ReseasyBackend from a BookingConfig
-#       (reading creds off the config object), an optional startup validator,
-#       and a register_backend("reseasy", ...) call so the dispatcher can find
-#       your backend without any edits to registry.py.
+
+def _factory(cfg) -> ReseasyBackend:
+    client = ReseasyClient(
+        api_key=cfg.reseasy_api_key,
+        base_url=cfg.reseasy_base_url,
+    )
+    return ReseasyBackend(restaurant_id=cfg.reseasy_restaurant_id, client=client)
+
+
+def _validator(cfg) -> str | None:
+    if not cfg.reseasy_api_key:
+        return "reseasy_api_key is missing from BookingConfig"
+    return None
+
+
+register_backend("reseasy", _factory, validator=_validator)
